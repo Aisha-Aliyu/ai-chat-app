@@ -1,48 +1,53 @@
-"use client"; 
-// 👆 VERY important in App Router — tells Next.js this is a client component (needed for state & Firebase)
+"use client";
 
 import { useState } from "react";
-import { auth } from "@/lib/firebase"; // import Firebase setup
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+import { useRouter } from "next/navigation"; // ✅ Next.js navigation
+import { auth } from "@/lib/firebase";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+} from "firebase/auth";
 
 export default function LoginPage() {
-  // Local state for email & password inputs
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const router = useRouter(); // ✅ initialize router
 
-  // Sign up function
+  // Sign up
   const handleSignUp = async () => {
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      alert("Account created successfully!");
+      router.push("/chat"); // ✅ redirect after signup
     } catch (err) {
       setError(err.message);
     }
   };
 
-  // Login function
+  // Login
   const handleSignIn = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      alert("Logged in successfully!");
+      router.push("/chat"); // ✅ redirect after login
     } catch (err) {
       setError(err.message);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="bg-white p-8 rounded shadow-md w-80">
-        <h1 className="text-2xl font-bold mb-4 text-center">AI Chat App</h1>
-        
+    <div className="flex items-center justify-center min-h-screen bg-gray-900">
+      <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-80">
+        <h1 className="text-2xl font-bold mb-6 text-center text-white">
+          AI Chat App
+        </h1>
+
         {/* Email Input */}
         <input
           type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full p-2 border rounded mb-3"
+          className="w-full p-2 mb-3 rounded bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
 
         {/* Password Input */}
@@ -51,22 +56,22 @@ export default function LoginPage() {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-2 border rounded mb-3"
+          className="w-full p-2 mb-4 rounded bg-gray-700 text-white placeholder-gray-400 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500"
         />
 
         {/* Error Message */}
-        {error && <p className="text-red-500 text-sm mb-2">{error}</p>}
+        {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
 
         {/* Buttons */}
         <button
           onClick={handleSignUp}
-          className="w-full bg-blue-500 text-white py-2 rounded mb-2 hover:bg-blue-600"
+          className="w-full bg-blue-600 text-white py-2 rounded mb-2 hover:bg-blue-700 font-medium transition"
         >
           Sign Up
         </button>
         <button
           onClick={handleSignIn}
-          className="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600"
+          className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 font-medium transition"
         >
           Login
         </button>
