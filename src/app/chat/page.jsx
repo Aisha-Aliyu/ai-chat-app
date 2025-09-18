@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { db, auth } from "../../lib/firebase";
+import { db, auth, storage } from "../../lib/firebase";
 import {
   collection,
   addDoc,
@@ -19,6 +19,7 @@ import {
   arrayRemove,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 export default function ChatPage() {
   const [user, setUser] = useState(null);
@@ -43,20 +44,26 @@ export default function ChatPage() {
   const [typingUsers, setTypingUsers] = useState([]);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(true);
 
   const [aiPersonality, setAiPersonality] = useState("friendly");
   const personalities = {
-    friendly: "You are a warm, supportive AI friend. Be kind, casual, and positive.",
-    sarcastic: "You are a witty AI that responds with sarcasm, but still helpful.",
-    professional: "You are a professional AI assistant. Be concise and formal.",
-    motivational: "You are a motivational coach AI. Encourage and uplift the user.",
+    friendly:
+      "You are a warm, supportive AI friend. Be kind, casual, and positive.",
+    sarcastic:
+      "You are a witty AI that responds with sarcasm, but still helpful.",
+    professional:
+      "You are a professional AI assistant. Be concise and formal.",
+    motivational:
+      "You are a motivational coach AI. Encourage and uplift the user.",
   };
 
   const [aiTyping, setAiTyping] = useState(false);
   const aiQueue = useRef(Promise.resolve());
   const messagesEndRef = useRef(null);
+  const typingTimeout = useRef(null);
 
-  // Track logged-in user
+  // Track logged-in user + presence
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (loggedUser) => {
       setUser(loggedUser);
@@ -66,6 +73,9 @@ export default function ChatPage() {
           {
             uid: loggedUser.uid,
             email: loggedUser.email,
+            photoURL: loggedUser.photoURL || null,
+            status: "online",
+            lastSeen: serverTimestamp(),
           },
           { merge: true }
         );
@@ -73,6 +83,21 @@ export default function ChatPage() {
     });
     return () => unsub();
   }, []);
+
+  // Mark offline when leaving
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (user) {
+        await setDoc(
+          doc(db, "users", user.uid),
+          { status: "offline", lastSeen: serverTimestamp() },
+          { merge: true }
+        );
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [user]);
 
   // Load rooms
   useEffect(() => {
@@ -82,9 +107,7 @@ export default function ChatPage() {
       let rms = [];
       snapshot.forEach((d) => {
         const data = d.data();
-
         const members = data.members || [];
-
         if (members.includes(user.uid) || d.id === "ai-bot") {
           rms.push({ id: d.id, ...data });
         }
@@ -105,7 +128,7 @@ export default function ChatPage() {
     return () => unsub;
   }, [user]);
 
-  // Load messages for current chat
+  // Load messages
   useEffect(() => {
     if (!user || !currentChat) return;
 
@@ -115,8 +138,7 @@ export default function ChatPage() {
       const q = query(
         collection(db, "aiChats", user.uid, "messages"),
         orderBy("createdAt", "asc")
-      );
-      unsub = onSnapshot(q, (snapshot) => {
+      );unsub = onSnapshot(q, (snapshot) => {
         let msgs = [];
         snapshot.forEach((docSnap) =>
           msgs.push({ id: docSnap.id, ...docSnap.data() })
@@ -154,7 +176,7 @@ export default function ChatPage() {
         setMessages(msgs);
       });
 
-      // Listen for typing in this room
+      // Typing status
       const qTyping = collection(db, "rooms", currentChat.id, "typingStatus");
       const unsubTyping = onSnapshot(qTyping, (snapshot) => {
         let typing = [];
@@ -180,11 +202,11 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Send message
-  const sendMessage = async () => {
-    if (!message.trim() || !currentChat) return;
+  // Send message (with AI streaming + file upload support)
+  const sendMessage = async (fileUrl = null) => {
+    if ((!message.trim() && !fileUrl) || !currentChat) return;
 
-    // Handle AI chat
+    // AI chat
     if (
       currentChat.id === "ai-bot" ||
       (currentChat.members?.includes("ai-bot") && includeAiInRoom)
@@ -192,9 +214,10 @@ export default function ChatPage() {
       const aiPerson = currentChat.aiPersonality || aiPersonality;
       const userMsg = {
         text: message.trim(),
+        fileUrl: fileUrl || null,
         uid: user.uid,
         email: user.email,
-        createdAt: new Date(),
+        createdAt: serverTimestamp(),
         delivered: true,
         read: true,
       };
@@ -202,7 +225,10 @@ export default function ChatPage() {
       if (currentChat.id === "ai-bot") {
         await addDoc(collection(db, "aiChats", user.uid, "messages"), userMsg);
       } else {
-        await addDoc(collection(db, "rooms", currentChat.id, "messages"), userMsg);
+        await addDoc(
+          collection(db, "rooms", currentChat.id, "messages"),
+          userMsg
+        );
       }
 
       setMessage("");
@@ -244,26 +270,49 @@ export default function ChatPage() {
             body: JSON.stringify({
               messages: history,
               personality: personalities[aiPerson],
+              stream: true, // enable streaming
             }),
           });
 
-          const data = await res.json();
-          const aiReplyText =
-            data?.reply || "Sorry, I couldn’t generate a response.";
+          const reader = res.body.getReader();
+          let partial = "";
+
+          while (true) {const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = new TextDecoder().decode(value);
+            partial += chunk;
+
+            // Update partial AI message
+            await setDoc(
+              doc(
+                db,
+                currentChat.id === "ai-bot"
+                  ? `aiChats/${user.uid}/messages/temp-ai`
+                  : `rooms/${currentChat.id}/messages/temp-ai`
+              ),
+              {
+                text: partial,
+                uid: "ai-bot",
+                email: "AI Assistant 🤖",
+                createdAt: serverTimestamp(),
+                delivered: true,
+                read: true,
+              }
+            );
+          }
+
+          // Finalize AI message
           const aiMsg = {
-            text: aiReplyText,
+            text: partial || "Sorry, I couldn’t generate a response.",
             uid: "ai-bot",
             email: "AI Assistant 🤖",
-            createdAt: new Date(),
+            createdAt: serverTimestamp(),
             delivered: true,
             read: true,
           };
 
           if (currentChat.id === "ai-bot") {
-            await addDoc(
-              collection(db, "aiChats", user.uid, "messages"),
-              aiMsg
-            );
+            await addDoc(collection(db, "aiChats", user.uid, "messages"), aiMsg);
           } else {
             await addDoc(
               collection(db, "rooms", currentChat.id, "messages"),
@@ -284,11 +333,13 @@ export default function ChatPage() {
     if (isDirect) {
       await addDoc(collection(db, "directMessages"), {
         text: message.trim(),
+        fileUrl: fileUrl || null,
         from: user.uid,
         to: currentChat.uid,
         email: user.email,
         createdAt: serverTimestamp(),
-        delivered: true,read: false,
+        delivered: true,
+        read: false,
       });
       setMessage("");
       return;
@@ -297,6 +348,7 @@ export default function ChatPage() {
     // Room messages
     await addDoc(collection(db, "rooms", currentChat.id, "messages"), {
       text: message.trim(),
+      fileUrl: fileUrl || null,
       uid: user.uid,
       email: user.email,
       createdAt: serverTimestamp(),
@@ -304,6 +356,19 @@ export default function ChatPage() {
       read: false,
     });
     setMessage("");
+  };
+
+  // Handle file uploads
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const storageRef = ref(
+      storage,
+      `uploads/${user.uid}/${Date.now()}-${file.name}`
+    );
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    await sendMessage(url);
   };
 
   // Typing indicators
@@ -359,9 +424,7 @@ export default function ChatPage() {
       admin: user.uid,
       createdAt: serverTimestamp(),
       aiPersonality: includeAiInRoom ? aiPersonality : null,
-    });
-
-    setNewRoomName("");
+    });setNewRoomName("");
     setNewRoomUsers([]);
     setIncludeAiInRoom(false);
     setShowRoomModal(false);
@@ -433,7 +496,8 @@ export default function ChatPage() {
             setSidebarOpen(false);
           }}
           className={`block w-full text-left px-3 py-2 rounded mb-2 ${
-            currentChat?.id === "ai-bot"? "bg-green-600 text-white"
+            currentChat?.id === "ai-bot"
+              ? "bg-green-600 text-white"
               : "text-gray-300 hover:bg-gray-700"
           }`}
         >
@@ -477,7 +541,7 @@ export default function ChatPage() {
 
             return (
               <div
-                key={msg.id || Math.random()}
+                key={msg.id}
                 className={`p-3 rounded-lg max-w-xs shadow-md ${
                   isAi
                     ? "bg-green-700 text-white"
@@ -487,9 +551,20 @@ export default function ChatPage() {
                 }`}
               >
                 <p className="text-xs text-gray-300 mb-1">
-                  {isAi ? "AI Assistant 🤖" : isMine ? "You" : msg.email}
-                </p>
-                <p className="text-base">{msg.text}</p>
+                  {isAi ? "AI Assistant 🤖" : isMine ? "You" : msg.email}</p>
+
+                {msg.fileUrl ? (
+                  <a
+                    href={msg.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-blue-300"
+                  >
+                    📎 File Attachment
+                  </a>
+                ) : (
+                  <p className="text-base">{msg.text}</p>
+                )}
 
                 {/* Reactions */}
                 <div className="flex mt-1">
@@ -502,128 +577,89 @@ export default function ChatPage() {
                       {emoji} {count}
                     </span>
                   ))}
-                  <button
-                    className="ml-2 text-sm text-gray-400"
+                  <span
+                    className="mx-1 cursor-pointer"
                     onClick={() => toggleReaction(msg.id, "👍")}
                   >
                     👍
-                  </button>
+                  </span>
+                  <span
+                    className="mx-1 cursor-pointer"
+                    onClick={() => toggleReaction(msg.id, "❤️")}
+                  >
+                    ❤️
+                  </span>
+                  <span
+                    className="mx-1 cursor-pointer"
+                    onClick={() => toggleReaction(msg.id, "😂")}
+                  >
+                    😂
+                  </span>
                 </div>
               </div>
             );
           })}
 
-          {aiTyping && currentChat?.id === "ai-bot" && (
-            <div className="p-3 rounded-lg max-w-xs bg-green-700 text-white shadow-md">
-              <p className="text-xs text-gray-300 mb-1">AI Assistant 🤖</p>
-              <p className="italic">Typing…</p>
+          {aiTyping && (
+            <div className="bg-gray-700 text-gray-300 px-3 py-2 rounded-lg max-w-xs">
+              AI Assistant is typing...
             </div>
           )}
 
           {typingUsers.length > 0 && (
-            <p className="text-sm text-gray-400 italic">
-              {typingUsers
-                .map((uid) => users.find((u) => u.uid === uid)?.email || uid)
-                .join(", ")}{" "}
-              typing...
-            </p>
+            <div className="bg-gray-700 text-gray-300 px-3 py-2 rounded-lg max-w-xs">
+              {typingUsers.join(", ")} typing...
+            </div>
           )}
 
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef}></div>
         </div>
 
         {/* Input */}
         {currentChat && (
-          <div className="p-4 bg-gray-800 flex">
+          <div className="p-4 border-t border-gray-700 flex items-center gap-2">
             <input
+              type="text"
               value={message}
               onChange={(e) => {
                 setMessage(e.target.value);
                 startTyping();
-                setTimeout(stopTyping, 2000);
+                if (typingTimeout.current) clearTimeout(typingTimeout.current);
+                typingTimeout.current = setTimeout(stopTyping, 2000);
               }}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              className="flex-1 border border-gray-600 rounded-l px-3 py-2 bg-gray-700 text-white placeholder-gray-400"
               placeholder="Type a message..."
+              className="flex-1 p-2 rounded bg-gray-800 text-white border border-gray-600"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  sendMessage();
+                  stopTyping();
+                }
+              }}
             />
+            <input
+              type="file"
+              onChange={handleFileUpload}
+              className="hidden"
+              id="file-upload"
+            />
+            <label
+              htmlFor="file-upload"
+              className="p-2 bg-gray-700 hover:bg-gray-600 rounded cursor-pointer"
+            >
+              📎
+            </label>
             <button
-              onClick={sendMessage}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-r font-medium">
+              onClick={() => {
+                sendMessage();
+                stopTyping();
+              }}
+              className="ml-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded font-medium"
+            >
               Send
             </button>
           </div>
         )}
       </div>
-
-      {/* Room Modal */}
-      {showRoomModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-gray-900 p-6 rounded w-96">
-            <h2 className="text-xl font-bold mb-4">Create Room</h2>
-            <input
-              placeholder="Room Name"
-              value={newRoomName}
-              onChange={(e) => setNewRoomName(e.target.value)}
-              className="w-full mb-2 px-3 py-2 rounded bg-gray-800 border border-gray-700"
-            />
-            <label className="block text-gray-300 mb-1">Invite Users:</label>
-            <select
-              multiple
-              value={newRoomUsers}
-              onChange={(e) =>
-                setNewRoomUsers(
-                  Array.from(e.target.selectedOptions, (option) => option.value)
-                )
-              }
-              className="w-full mb-2 p-2 bg-gray-800 border border-gray-700 rounded"
-            >
-              {users.map((u) => (
-                <option key={u.uid} value={u.uid}>
-                  {u.email}
-                </option>
-              ))}
-            </select>
-
-            <label className="flex items-center gap-2 mb-2">
-              <input
-                type="checkbox"
-                checked={includeAiInRoom}
-                onChange={(e) => setIncludeAiInRoom(e.target.checked)}
-              />
-              Include AI Assistant in this room
-            </label>
-
-            {includeAiInRoom && (
-              <select
-                value={aiPersonality}
-                onChange={(e) => setAiPersonality(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 p-2 rounded mb-2"
-              >
-                {Object.keys(personalities).map((p) => (
-                  <option key={p} value={p}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowRoomModal(false)}
-                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={createRoom}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

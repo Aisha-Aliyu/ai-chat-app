@@ -6,9 +6,8 @@ const openai = new OpenAI({
 
 export async function POST(req) {
   try {
-    // Safely parse JSON body
     const body = await req.json().catch(() => ({}));
-    const { messages = [], personality = "" } = body;
+    const { messages = [], personality = "", stream = false } = body;
 
     if (!Array.isArray(messages)) {
       return new Response(
@@ -17,24 +16,45 @@ export async function POST(req) {
       );
     }
 
-    // System personality prompt
     const systemPrompt = {
       role: "system",
       content: personality || "You are a helpful AI assistant.",
     };
 
-    // Ensure only valid roles are passed
     const chatMessages = [
       systemPrompt,
       ...messages
         .filter((m) => m && m.role && m.content)
-        .map((m) => ({
-          role: m.role,
-          content: String(m.content),
-        })),
+        .map((m) => ({ role: m.role, content: String(m.content) })),
     ];
 
-    // Request to OpenAI
+    // Streaming mode
+    if (stream) {
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: chatMessages,
+        temperature: 0.7,
+        stream: true,
+      });
+
+      const encoder = new TextEncoder();
+      const readableStream = new ReadableStream({
+        async start(controller) {
+          stream.on("data", (chunk) => {
+            const text = chunk.choices?.[0]?.delta?.content;
+            if (text) controller.enqueue(encoder.encode(text));
+          });
+          stream.on("end", () => controller.close());
+          stream.on("error", (err) => controller.error(err));
+        },
+      });
+
+      return new Response(readableStream, {
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
+
+    // Regular non-stream fallback
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: chatMessages,
@@ -49,12 +69,8 @@ export async function POST(req) {
     });
   } catch (err) {
     console.error("AI route error:", err);
-
     return new Response(
-      JSON.stringify({
-        error: "Internal Server Error",
-        details: err.message,
-      }),
+      JSON.stringify({ error: "Internal Server Error", details: err.message }),
       { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
