@@ -28,9 +28,8 @@ export async function POST(req) {
         .map((m) => ({ role: m.role, content: String(m.content) })),
     ];
 
-    // Streaming mode
     if (stream) {
-      const stream = await openai.chat.completions.create({
+      const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: chatMessages,
         temperature: 0.7,
@@ -40,12 +39,25 @@ export async function POST(req) {
       const encoder = new TextEncoder();
       const readableStream = new ReadableStream({
         async start(controller) {
-          stream.on("data", (chunk) => {
-            const text = chunk.choices?.[0]?.delta?.content;
-            if (text) controller.enqueue(encoder.encode(text));
-          });
-          stream.on("end", () => controller.close());
-          stream.on("error", (err) => controller.error(err));
+          try {
+            let hasOutput = false;
+            for await (const event of completion) {
+              const text = event.choices?.[0]?.delta?.content;
+              if (text) {
+                controller.enqueue(encoder.encode(text));
+                hasOutput = true;
+              }
+            }
+            // Ensure at least a fallback message
+            if (!hasOutput) {
+              controller.enqueue(encoder.encode("Sorry, I couldn't generate a response."));
+            }
+            controller.close();
+          } catch (err) {
+            console.error("Streaming error:", err);
+            controller.enqueue(encoder.encode("Sorry, an error occurred while generating a response."));
+            controller.close();
+          }
         },
       });
 
@@ -54,19 +66,20 @@ export async function POST(req) {
       });
     }
 
-    // Regular non-stream fallback
+    // Non-stream fallback
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: chatMessages,
       temperature: 0.7,
     });
 
-    const reply = response.choices?.[0]?.message?.content?.trim() || "";
+    const reply = response.choices?.[0]?.message?.content?.trim() || "Sorry, I couldn't generate a response.";
 
     return new Response(JSON.stringify({ reply }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
+
   } catch (err) {
     console.error("AI route error:", err);
     return new Response(
