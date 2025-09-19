@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "emoji-picker-react": "^4.13.3",
     "firebase": "^12.2.1",
     "next": "15.5.3",
     "openai": "^5.20.3",
