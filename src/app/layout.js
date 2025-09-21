@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  metadataBase: new URL("https://AiChatApp.vercel.app"),
+  metadataBase: new URL("https://ai-chat-app-ochre-sigma.vercel.app/"),
   title: "AI Chat App",
   description:
     "A modern AI-powered chat app with real-time messaging, AI assistance, and a sleek UI.",
@@ -26,7 +26,7 @@ export const metadata = {
     title: "AI Chat App",
     description:
       "Chat in real-time with friends and AI — sleek, modern, and responsive.",
-    url: "https://AiChatApp.vercel.app",
+    url: "https://ai-chat-app-ochre-sigma.vercel.app/",
     siteName: "AI Chat App",
     images: [
       {
