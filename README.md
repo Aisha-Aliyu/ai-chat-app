@@ -1,95 +1,42 @@
-# 🤖 AI Chat App
+# AI Chat App
 
-> A full-stack, real-time AI-powered chat platform built with Next.js 14, Firebase, and OpenAI GPT-4o-mini.
+A real time chat app with an AI assistant built in. You can create group rooms, share images, react to messages and ask the assistant (OpenAI's GPT-4o mini) questions without leaving the chat. It's built with Next.js, Firebase and Tailwind CSS.
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Visit%20App-brightgreen?style=for-the-badge)](https://ai-chat-app-ochre-sigma.vercel.app/)
-[![Next.js](https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
-[![Firebase](https://img.shields.io/badge/Firebase-Firestore-orange?style=for-the-badge&logo=firebase)](https://firebase.google.com/)
-[![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?style=for-the-badge&logo=openai)](https://platform.openai.com/)
-[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.x-38B2AC?style=for-the-badge&logo=tailwind-css)](https://tailwindcss.com/)
+Live demo: https://ai-chat-app-ochre-sigma.vercel.app
 
------
+## Screenshots
 
-## 📸 Screenshots
+| Login | Chat | Room modal |
+| --- | --- | --- |
+| ![Login](./public/screenshots/login-signup.PNG) | ![Chat](./public/screenshots/chat-screen.PNG) | ![Room](./public/screenshots/room-modal.PNG) |
 
-|Login                                          |Chat                                         |Room Modal                                  |
-|-----------------------------------------------|---------------------------------------------|--------------------------------------------|
-|![Login](./public/screenshots/login-signup.PNG)|![Chat](./public/screenshots/chat-screen.PNG)|![Room](./public/screenshots/room-modal.PNG)|
+## Features
 
------
+- Email and password sign in with Firebase Authentication.
+- Messages sync instantly for everyone in the chat through Firestore.
+- An AI assistant powered by GPT-4o mini, with replies that stream in as they're written.
+- Group rooms: create a room, add members and chat together.
+- Image sharing with a preview in the chat.
+- Emoji reactions on any message.
+- Edit or delete your messages from a context menu.
+- Typing indicators for people and for the AI.
+- Works on mobile and desktop.
 
-## ✨ Features
+## How it's built
 
-- 🔑 **Authentication** — Secure email/password login via Firebase Auth
-- 💬 **Real-time Messaging** — Messages sync instantly across all connected clients via Firestore
-- 🤖 **AI Assistant** — Integrated OpenAI GPT-4o-mini chatbot with streaming responses
-- 👥 **Group Chats** — Create rooms, add members, and collaborate in real time
-- 📎 **File Sharing** — Upload and preview images directly in chat
-- 😀 **Emoji Reactions** — React to any message with an emoji picker
-- ✏️ **Edit & Delete** — Context menu for message management (long-press style like ChatGPT)
-- 🔔 **Typing Indicators** — Live “is typing…” indicators for both users and AI
-- 📱 **Fully Responsive** — Optimised for mobile and desktop viewports
-- 🎨 **Modern UI** — Tailwind CSS with custom animations and smooth transitions
+Next.js (App Router) handles both the pages and the API. Requests to the AI go through an API route (`src/app/api/ai/route.js`), so the OpenAI key stays on the server, and a custom hook (`useAI.js`) handles the streamed replies. Firebase Authentication handles accounts and Firestore stores the messages. It's deployed on Vercel.
 
------
+## Run it locally
 
-## 🛠️ Tech Stack
-
-|Layer      |Technology             |
-|-----------|-----------------------|
-|Framework  |Next.js 14 (App Router)|
-|Frontend   |React, Tailwind CSS    |
-|Backend/API|Next.js API Routes     |
-|Auth       |Firebase Authentication|
-|Database   |Firebase Firestore     |
-|AI         |OpenAI GPT-4o-mini     |
-|Deployment |Vercel                 |
-
------
-
-## 📂 Project Structure
-
-```
-src/app/
-├─ api/ai/route.js        # AI API endpoint (calls OpenAI)
-├─ chat/page.jsx          # Main chat page
-├─ components/            # ChatWindow, Sidebar, RoomModal, etc.
-├─ hooks/useAI.js         # Custom hook for AI messages & streaming
-├─ login/page.js          # Authentication page
-├─ globals.css            # Global styles
-├─ layout.js              # Root layout + metadata
-└─ page.js                # Landing page
-
-src/lib/firebase.js       # Firebase configuration
-public/                   # Icons, screenshots, favicons
-```
-
------
-
-## ⚙️ Getting Started
-
-### Prerequisites
-
-- Node.js 18+
-- A Firebase project with Firestore and Authentication enabled
-- An OpenAI API key
-
-### 1. Clone the repo
+You'll need Node.js 18 or newer, a Firebase project with Firestore and Authentication turned on, and an OpenAI API key.
 
 ```bash
 git clone https://github.com/Aisha-Aliyu/ai-chat-app.git
 cd ai-chat-app
-```
-
-### 2. Install dependencies
-
-```bash
 npm install
 ```
 
-### 3. Configure environment variables
-
-Create a `.env.local` file in the root:
+Create a `.env.local` file in the project root:
 
 ```env
 NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
@@ -98,51 +45,21 @@ NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
 NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
 NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
-
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-### 4. Run locally
+Then run `npm run dev` and open http://localhost:3000. To deploy on Vercel, add the same variables in the project's environment settings.
 
-```bash
-npm run dev
-```
+## What I'd add next
 
-Open <http://localhost:3000> in your browser.
+Push notifications, voice messages, a choice of AI personalities, end to end encryption and message search.
 
------
+## Contact
 
-## 🚀 Deployment
+Aisha Aliyu, full stack and frontend engineer
 
-This app is deployed on **Vercel**:
+- Portfolio: https://humairah.netlify.app
+- LinkedIn: https://www.linkedin.com/in/aisha-aliyu-dev
+- GitHub: https://github.com/Aisha-Aliyu
 
-1. Push your code to GitHub
-1. Import the repo into [Vercel](https://vercel.com/)
-1. Add all `.env.local` variables in the Vercel dashboard
-1. Deploy — done ✅
-
------
-
-## 🗺️ Roadmap
-
-- [ ] Push notifications
-- [ ] Voice messages
-- [ ] AI personality selector
-- [ ] End-to-end encryption
-- [ ] Message search
-
------
-
-## 👩‍💻 Author
-
-**Aisha Aliyu** — Full-Stack & Frontend Engineer
-
-- 🌐 Portfolio: [humairah.netlify.app](https://humairah.netlify.app)
-- 💼 LinkedIn: [https://www.linkedin.com/in/aisha-aliyu-dev](https://www.linkedin.com/in/aisha-aliyu-dev)
-- 🐙 GitHub: [@Aisha-Aliyu](https://github.com/Aisha-Aliyu)
-
------
-
-## 📜 License
-
-This project is licensed under the [MIT License](./LICENSE) — free to use, modify, and distribute.
+License: MIT
